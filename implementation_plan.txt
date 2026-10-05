@@ -1,0 +1,288 @@
+================================================================================
+    MULTIMODAL SHOPPING AGENT - PRODUCTION & 100% FREE TIER IMPLEMENTATION PLAN
+================================================================================
+
+PROJECT PHILOSOPHY & OBJECTIVE
+------------------------------
+A production-grade, multimodal e-commerce AI shopping assistant designed to be:
+1. 100% Free-Tier & Cost-Safe (Zero monthly API bill, zero cloud charges).
+2. Rate-Limit Resilient (Designed around Google AI Studio free tier: 15 RPM).
+3. Production LLMOps Grade (Two-tier guardrails, automated evals, CI/CD, tracing).
+4. Full-Stack Complete (Next.js 14 + FastAPI + PostgreSQL 16 + LangGraph).
+
+================================================================================
+THE 100% FREE TECH STACK SPECIFICATION
+================================================================================
+
+| Component | Free Tool / Service | Free-Tier Limits & Strategy | Cost |
+| :--- | :--- | :--- | :--- |
+| **Primary LLM** | Google Gemini 1.5 Flash | 15 RPM, 1M TPM, 1,500 requests/day | **$0.00** |
+| **Backup LLM** | Groq (Llama-3.3-70b) or Ollama (Local) | Groq free tier / Ollama offline local fallback | **$0.00** |
+| **Agent Core** | LangChain & LangGraph | Open source (Python) | **$0.00** |
+| **Input Guardrails** | Hybrid: Rule/Regex Filter + Structured LLM | Regex blocks 80% off-topic (0 LLM calls) | **$0.00** |
+| **Output Guardrails**| Pure Code DB Validator (Anti-Hallucination) | Validates product_id & price in Postgres (0 LLM calls)| **$0.00** |
+| **Database** | PostgreSQL 16 (via Docker) | Runs locally on your machine, zero cloud limits | **$0.00** |
+| **Backend API** | FastAPI + Uvicorn + Asyncpg + SQLAlchemy | Open source | **$0.00** |
+| **Frontend UI** | Next.js (App Router, Tailwind CSS, TypeScript) | Open source, runs locally or Vercel hobby tier | **$0.00** |
+| **Package Manager**| Astral uv | Open source, 10x-100x faster than pip | **$0.00** |
+| **Observability** | Langfuse (Cloud Free Tier or Docker) / LangSmith | 50k events/month free on Langfuse cloud | **$0.00** |
+| **CI / CD** | GitHub Actions | 2,000 mins/month free (unlimited for public repos)| **$0.00** |
+
+================================================================================
+UPGRADED ARCHITECTURE: ZERO-WASTE GUARDRAIL & EVAL PIPELINE
+================================================================================
+
+                                 [ User Query ]
+                                       │
+                                       ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ STEP 1: Fast Rule-Based Input Guardrail (Cost: $0 | Latency: ~1ms)  │
+    │ - Regex & Keyword blocklist (poems, weather, coding, jailbreak)    │
+    │ - Immediate exit with polite redirect if blatantly off-topic        │
+    └──────────────────────────────────┬──────────────────────────────────┘
+                                       │ (Passed)
+                                       ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ STEP 2: Ambiguity Guardrail (Only if borderline, Gemini Structured) │
+    │ - Checks intent with low temperature (0) & small prompt             │
+    └──────────────────────────────────┬──────────────────────────────────┘
+                                       │ (is_shopping_related = True)
+                                       ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ STEP 3: LangGraph Multimodal Agent Node (Gemini 1.5 Flash)          │
+    │ - Injects User Preferences (Organic, max price) from Postgres       │
+    │ - Ingests text + image (receipts, snacks, labels)                   │
+    │ - Generates tool calls: search_products, get_order_history          │
+    └──────────────────────────────────┬──────────────────────────────────┘
+                                       │
+                                       ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ STEP 4: PostgreSQL Tool Execution                                   │
+    │ - Queries products / orders tables with SQL                         │
+    └──────────────────────────────────┬──────────────────────────────────┘
+                                       │
+                                       ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ STEP 5: Pure Code Output Guardrail (Cost: $0 | Hallucination Check) │
+    │ - Verifies returned product IDs actually exist in Postgres DB       │
+    │ - Verifies quoted prices match DB prices                            │
+    │ - Enforces numbered list format requested in exercise specs         │
+    └──────────────────────────────────┬──────────────────────────────────┘
+                                       │
+                                       ▼
+                            [ Final User Response ]
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+
+Langchain_Shopping_Agent/
+│
+├── .github/
+│   └── workflows/
+│       ├── ci-pr.yml                # Fast CI on PR: Lint, Unit tests, 0-LLM evals
+│       └── eval-nightly.yml         # Scheduled full eval suite with rate limiting
+│
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                  # FastAPI application entrypoint
+│   │   ├── config.py                # Environment variables, rate limits, API keys
+│   │   ├── database.py              # PostgreSQL async engine & session pool
+│   │   │
+│   │   ├── models/                  # Database & Pydantic models
+│   │   │   ├── product.py           # Product table
+│   │   │   ├── order.py             # Order table (JSONB item receipts)
+│   │   │   └── user_preference.py   # User preferences table
+│   │   │
+│   │   ├── services/                # Business logic
+│   │   │   ├── product_service.py   # Search queries, filters, price caps
+│   │   │   ├── order_service.py     # Order history summaries
+│   │   │   └── user_service.py      # Preference storage
+│   │   │
+│   │   ├── agent/                   # LangChain & LangGraph
+│   │   │   ├── __init__.py
+│   │   │   ├── state.py             # AgentState (messages, user_id, preferences, image)
+│   │   │   ├── tools.py             # @tool: search_products, get_order_history, save_pref
+│   │   │   ├── prompts.py           # Versioned prompts (v1, v2) with preference injection
+│   │   │   └── graph.py             # LangGraph state machine & router edges
+│   │   │
+│   │   ├── guardrails/              # Two-Tier Guardrails
+│   │   │   ├── __init__.py
+│   │   │   ├── rules.py             # Tier 1: Zero-cost regex/keyword filter
+│   │   │   ├── input_classifier.py  # Tier 2: Gemini structured output classifier
+│   │   │   ├── output_validator.py  # Tier 3: Deterministic DB price/product validator
+│   │   │   └── security.py          # Prompt injection & jailbreak detection
+│   │   │
+│   │   └── routes/                  # API endpoints
+│   │       ├── chat.py              # POST /api/chat (SSE streaming & image upload)
+│   │       ├── products.py          # GET /api/products
+│   │       ├── orders.py            # GET /api/orders/{user_id}
+│   │       └── preferences.py       # GET/POST /api/users/{user_id}/preferences
+│   │
+│   ├── scripts/
+│   │   ├── seed_db.py               # Seeds 40+ products (organic/regular) & orders
+│   │   └── run_evals.py             # Standalone eval runner with rate-limit throttling
+│   │
+│   ├── tests/                       # Testing & Evals
+│   │   ├── test_unit_api.py         # 0-cost: FastAPI routes & DB queries
+│   │   ├── test_guardrails_fast.py  # 0-cost: Regex & code guardrails test suite
+│   │   ├── test_output_validator.py # 0-cost: DB anti-hallucination verification
+│   │   ├── test_tool_accuracy.py    # Rate-limited: Tool call parameter tests (15 RPM safe)
+│   │   └── test_security.py         # Prompt injection & refusal benchmarks
+│   │
+│   ├── Dockerfile
+│   ├── pyproject.toml               # uv configuration & locked dependencies
+│   └── uv.lock
+│
+├── frontend/                        # Next.js Application
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   └── page.tsx                 # Storefront catalog + floating chat drawer
+│   ├── components/
+│   │   ├── catalog-grid.tsx         # Product browsing grid with badges
+│   │   ├── chat-drawer.tsx          # Real-time streaming assistant with photo upload
+│   │   ├── product-card.tsx         # Rich product card with "Add to Cart"
+│   │   └── preferences-modal.tsx    # Live user preference toggles
+│   ├── Dockerfile
+│   └── package.json
+│
+├── docker-compose.yml               # Local stack: Postgres + FastAPI + Next.js
+├── .env.example                     # Free tier keys template
+└── README.md                        # Portfolio documentation with eval metrics badge
+
+================================================================================
+STEP-BY-STEP IMPLEMENTATION ROADMAP (OPTIMIZED FOR 100% FREE TIER)
+================================================================================
+
+--------------------------------------------------------------------------------
+PHASE 1: Project Setup & Package Management (uv)
+--------------------------------------------------------------------------------
+1. Initialize repository with `uv init backend`.
+2. Configure `pyproject.toml` with:
+   - `langchain`, `langgraph`, `langchain-google-genai`
+   - `fastapi`, `uvicorn[standard]`, `pydantic`, `python-multipart`
+   - `sqlalchemy`, `asyncpg`
+   - `pytest`, `pytest-asyncio`, `ruff`
+   - `langfuse` (free tier observability)
+3. Create `.env.example`:
+   - `GEMINI_API_KEY=` (From Google AI Studio - Free)
+   - `DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/shopping_db`
+   - `LANGFUSE_PUBLIC_KEY=` / `LANGFUSE_SECRET_KEY=` (Optional free cloud tracing)
+4. Verify environment with `uv sync`.
+
+--------------------------------------------------------------------------------
+PHASE 2: PostgreSQL Database & Tailored Catalog Seeding
+--------------------------------------------------------------------------------
+1. Create `docker-compose.yml` for local PostgreSQL 16 (port 5432).
+2. Define SQLAlchemy models:
+   - `Product`: id, name, category, price, is_organic (bool), stock, image_url.
+   - `Order`: id, user_id, items (JSONB), total_amount, status, created_at.
+   - `UserPreference`: user_id, prefers_organic (bool), max_price_limit (float), notes.
+3. Write `scripts/seed_db.py`:
+   - Seed products specifically crafted to test constraints:
+     * Organic Raw Wildflower Honey ($14.99) vs Standard Clover Honey ($6.99)
+     * Organic Rolled Oats ($4.50) vs Premium Imported Manuka Honey ($35.00 - above $20 cap)
+     * Gluten-free snacks, dairy-free milk, pantry staples.
+   - Seed past orders for User ID 1 (e.g. bought organic honey 10 days ago).
+
+--------------------------------------------------------------------------------
+PHASE 3: Database Services & LangChain Tools
+--------------------------------------------------------------------------------
+1. Service functions:
+   - `search_products(query, is_organic, max_price, category)`
+   - `get_order_history(user_id)`
+   - `save_user_preference(user_id, prefers_organic, max_price_limit, notes)`
+2. Wrap as LangChain `@tool`s with strict Pydantic docstrings:
+   - Parameter types, defaults, and field descriptions clearly stated so Gemini
+     calls them with 95%+ zero-shot accuracy.
+
+--------------------------------------------------------------------------------
+PHASE 4: Two-Tier Zero-Cost Guardrails & Security
+--------------------------------------------------------------------------------
+1. **Tier 1 (Fast & Free): `guardrails/rules.py`**:
+   - Regex patterns for non-shopping intents (poems, stories, coding questions, weather).
+   - Prompt injection patterns ("ignore previous instructions", "system prompt reveal").
+   - Execution time: < 1ms, Cost: $0.
+2. **Tier 2 (Borderline Queries): `guardrails/input_classifier.py`**:
+   - Small Gemini prompt with structured output: `GuardrailDecision(is_shopping, reason)`.
+   - Only executed if Tier 1 is ambiguous.
+3. **Tier 3 (Anti-Hallucination Output Validator): `guardrails/output_validator.py`**:
+   - Pure code validator!
+   - Parses product IDs or names returned by the agent and verifies they exist in PostgreSQL.
+   - Validates that returned items obey the user's budget and organic preferences.
+   - Enforces numbered list format compliance required by exercise prompt.
+
+--------------------------------------------------------------------------------
+PHASE 5: Multimodal LangGraph Agent
+--------------------------------------------------------------------------------
+1. `AgentState`:
+   - `messages`, `user_id`, `active_preferences`, `image_data`, `guardrail_status`.
+2. Dynamic Prompt Injection:
+   - Reads `user_preferences` from PostgreSQL and dynamically adds to system instructions:
+     *"User Alex always prefers organic items and has a $20 price cap unless specified."*
+3. Multimodal Image Ingestion:
+   - Handles base64 encoded user photos (e.g., photo of a cereal box or snack).
+   - Gemini 1.5 Flash inspects image -> extracts product keywords -> invokes `search_products`.
+4. Graph Assembly:
+   - `entry_point` -> `rule_guardrail` -> (if passed) `agent` <-> `tools` -> `output_validator` -> `END`.
+
+--------------------------------------------------------------------------------
+PHASE 6: FastAPI Backend
+--------------------------------------------------------------------------------
+1. Endpoints:
+   - `POST /api/chat` — accepts message, user_id, optional image file; returns Server-Sent Events (SSE).
+   - `GET /api/products` — catalog list with category/price filters.
+   - `GET /api/orders/{user_id}` — past order receipts.
+   - `GET/POST /api/users/{user_id}/preferences` — view and edit saved preferences.
+
+--------------------------------------------------------------------------------
+PHASE 7: Evaluation Suite (Built for Free Tier Rate Limits)
+--------------------------------------------------------------------------------
+1. **Free / 0-LLM-Call Tests (`tests/test_guardrails_fast.py`, `test_unit_api.py`)**:
+   - 20 regex and security tests for jailbreaks and off-topic questions.
+   - FastAPI endpoint integration tests using `httpx.AsyncClient`.
+   - Output validator anti-hallucination tests.
+2. **Tool Call Accuracy Evals (`tests/test_tool_accuracy.py`)**:
+   - 10-15 golden test cases:
+     * "organic honey under $20" -> `search_products(query="honey", is_organic=True, max_price=20)`
+     * "what did I order previously?" -> `get_order_history(user_id=1)`
+     * "I never want items over $15" -> `save_user_preference(max_price_limit=15)`
+   - Built-in 4-second delay between tests to respect Gemini's 15 RPM free limit.
+3. **Response Quality Eval**:
+   - Scores responses on: Relevance (1-5), Correctness (DB matched), Format Compliance (Numbered list).
+
+--------------------------------------------------------------------------------
+PHASE 8: Frontend (Next.js + Tailwind CSS)
+--------------------------------------------------------------------------------
+1. Modern Storefront UI:
+   - Hero header with Cart badge and User Profile selector.
+   - Interactive product grid with category filter tags and organic badges.
+   - Floating AI Shopping Assistant drawer with real-time streaming text.
+   - Multimodal photo upload button (drag & drop / camera).
+   - Live preferences badge showing active AI memory.
+
+--------------------------------------------------------------------------------
+PHASE 9: CI/CD Pipeline & GitHub Actions (Quota-Safe)
+--------------------------------------------------------------------------------
+1. **PR Workflow (`.github/workflows/ci-pr.yml`)**:
+   - Runs on every Pull Request.
+   - Uses uv for sub-30-second package install.
+   - Runs Ruff linter + 0-cost unit tests + fast guardrail tests.
+   - Consumes **0 LLM API calls** (no quota wasted on PRs).
+2. **Nightly / Manual Workflow (`.github/workflows/eval-nightly.yml`)**:
+   - Runs the full tool-call accuracy eval suite against Gemini API.
+   - Outputs a summary table: Tool-Call Accuracy %, Guardrail Pass %, Latency.
+
+================================================================================
+METRICS TO SHOW OFF IN YOUR INTERVIEW / RESUME
+================================================================================
+Upon completing this plan, you will have verifiable LLMOps metrics:
+- **Tool-Calling Precision**: >= 90% parameter match rate on golden test set.
+- **Zero-Cost Guardrail Efficiency**: 80%+ off-topic queries intercepted before LLM execution.
+- **Hallucination Rate**: 0% on product IDs and prices via code-level DB validation.
+- **Total Operational Cost**: $0.00 / month on developer free tiers.
+
+================================================================================
+                                 END OF PLAN
+================================================================================
