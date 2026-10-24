@@ -1,7 +1,46 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multimodal Shopping Agent Backend - Production & Free Tier"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langgraph>=0.2.0",
+    "langchain-google-genai>=2.0.0",
+    "google-genai>=1.0.0",
+    "groq>=0.11.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "python-multipart>=0.0.12",
+    "sse-starlette>=2.1.3",
+    "httpx>=0.27.0",
+    "sqlalchemy>=2.0.35",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.3",
+    "langfuse>=2.50.0",
+    "langsmith>=0.1.130",
+    "pillow>=10.4.0",
+    "python-dotenv>=1.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
