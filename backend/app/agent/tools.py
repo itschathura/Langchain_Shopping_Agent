@@ -1,153 +1,183 @@
+import json
+from typing import Any, Optional
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 from app.database import AsyncSessionLocal
-from app.services import order_service, product_service, user_service
+from app.services.order_service import get_order_history as svc_get_order_history
+from app.services.product_service import search_products as svc_search_products
+from app.services.user_service import save_user_preference as svc_save_user_preference
 
 
-@tool
+# ==============================================================================
+# Pydantic Input Schemas for High Tool-Calling Accuracy
+# ==============================================================================
+
+class SearchProductsInput(BaseModel):
+    query: Optional[str] = Field(
+        default=None,
+        description="Search keyword to match in product title or description (e.g., 'honey', 'oats', 'milk', 'crackers', 'coffee'). Use concise terms.",
+    )
+    is_organic: Optional[bool] = Field(
+        default=None,
+        description="Set to True to filter strictly for certified organic items, False for conventional non-organic items, or omit/null for any.",
+    )
+    max_price: Optional[float] = Field(
+        default=None,
+        description="Maximum item price in USD (e.g. 20.0). Only returns items with price less than or equal to this limit.",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        description="Product department/category (e.g. 'Honey & Sweeteners', 'Pantry & Grains', 'Dairy & Alternatives', 'Snacks', 'Beverages', 'Produce', 'Oils & Condiments').",
+    )
+
+
+class GetOrderHistoryInput(BaseModel):
+    user_id: int = Field(
+        description="The unique integer customer ID whose past orders and receipts are being requested.",
+    )
+    limit: int = Field(
+        default=5,
+        description="Maximum number of recent orders to retrieve (default is 5).",
+    )
+
+
+class SaveUserPreferenceInput(BaseModel):
+    user_id: int = Field(
+        description="The customer's unique integer ID.",
+    )
+    prefers_organic: Optional[bool] = Field(
+        default=None,
+        description="Whether the user prefers organic products by default (True or False).",
+    )
+    max_price_limit: Optional[float] = Field(
+        default=None,
+        description="Default maximum budget/spending limit per item in USD.",
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Any specific dietary preferences, allergies, or notes (e.g. 'Gluten-free diet, strict budget under $15').",
+    )
+
+
+# ==============================================================================
+# LangChain Tool Implementations
+# ==============================================================================
+
+@tool(args_schema=SearchProductsInput)
 async def search_products(
-    query: str = "",
-    category: str | None = None,
-    is_organic: bool | None = None,
-    max_price: float | None = None,
-    limit: int = 8,
+    query: Optional[str] = None,
+    is_organic: Optional[bool] = None,
+    max_price: Optional[float] = None,
+    category: Optional[str] = None,
 ) -> str:
-    """Search the store product catalog for groceries, pantry staples, and items.
-
-    Args:
-        query: Keywords to search in product title or description (e.g. 'honey', 'oats', 'milk', 'crackers').
-        category: Filter by specific category (e.g. 'Honey & Sweeteners', 'Pantry & Grains', 'Dairy & Alternatives', 'Produce', 'Snacks', 'Beverages', 'Bakery', 'Oils & Condiments').
-        is_organic: Set to True if the customer specifically wants organic certified products, False for conventional, or omit if not specified.
-        max_price: Maximum price per unit in USD (e.g. 20.0 for items <= $20.00).
-        limit: Max number of products to return (default 8).
-
-    Returns:
-        A formatted list of products with ID, name, price, organic status, and stock.
+    """Search and filter the store catalog for grocery products, snacks, beverages, and pantry items.
+    
+    Use this tool whenever the customer:
+    - Asks to find, buy, search, or check prices for grocery products
+    - Specifies budget constraints (e.g. "under $20")
+    - Specifies dietary/organic preferences (e.g. "organic honey")
+    - Asks what items are in stock in a particular category
+    
+    Returns a JSON string containing matched products with id, name, price, organic status, and stock.
     """
-    try:
-        async with AsyncSessionLocal() as session:
-            products = await product_service.search_products(
-                session=session,
-                query=query if query.strip() else None,
-                is_organic=is_organic,
-                max_price=max_price,
-                category=category,
-                limit=limit,
-            )
+    async with AsyncSessionLocal() as session:
+        products = await svc_search_products(
+            session=session,
+            query=query,
+            is_organic=is_organic,
+            max_price=max_price,
+            category=category,
+            limit=10,
+        )
 
-        if not products:
-            criteria = []
-            if query:
-                criteria.append(f"query='{query}'")
-            if category:
-                criteria.append(f"category='{category}'")
-            if is_organic is not None:
-                criteria.append(f"organic={is_organic}")
-            if max_price is not None:
-                criteria.append(f"max_price=${max_price:.2f}")
+    if not products:
+        filters_applied = []
+        if query:
+            filters_applied.append(f"query='{query}'")
+        if is_organic is not None:
+            filters_applied.append(f"is_organic={is_organic}")
+        if max_price is not None:
+            filters_applied.append(f"max_price=${max_price:.2f}")
+        if category:
+            filters_applied.append(f"category='{category}'")
+        return f"No products found matching criteria ({', '.join(filters_applied)}). Try broadening the search."
 
-            crit_str = ", ".join(criteria) if criteria else "given filters"
-            return f"No products found matching the criteria ({crit_str}). Please suggest related categories or adjust price/filters."
+    # Return clean, formatted JSON for LLM consumption
+    formatted = [
+        {
+            "id": p["id"],
+            "name": p["name"],
+            "price": p["price"],
+            "is_organic": p["is_organic"],
+            "category": p["category"],
+            "stock": p["stock"],
+            "description": p["description"],
+        }
+        for p in products
+    ]
+    return json.dumps(formatted, indent=2)
 
-        lines = [f"Found {len(products)} product(s):"]
-        for p in products:
-            org_tag = "Organic" if p.get("is_organic") else "Conventional"
-            lines.append(
-                f"- [ID: {p['id']}] {p['name']} | Price: ${p['price']:.2f} | "
-                f"Category: {p['category']} | Status: {org_tag} | Stock: {p['stock']} | "
-                f"Description: {p.get('description', 'N/A')}"
-            )
-        return "\n".join(lines)
-    except Exception as exc:  # noqa: BLE001
-        return f"Error executing product search: {exc!s}"
 
-
-@tool
+@tool(args_schema=GetOrderHistoryInput)
 async def get_order_history(
     user_id: int,
     limit: int = 5,
 ) -> str:
-    """Retrieve past purchase receipts and order history for a specific customer.
-
-    Args:
-        user_id: The unique ID number of the customer (e.g. 1 for Alex).
-        limit: Maximum number of previous orders to return (default 5, latest first).
-
-    Returns:
-        Formatted summary of past orders with dates, items bought, quantities, and totals.
+    """Retrieve past purchase receipts and order history for a customer.
+    
+    Use this tool whenever the customer:
+    - Asks "What did I order previously?", "What did I buy last week?", or "Show my previous orders"
+    - Wants to reorder something they bought in the past
+    - Wants to verify past receipt details or purchase totals
+    
+    Returns a JSON list of past orders with dates, total amounts, and item breakdowns.
     """
-    try:
-        async with AsyncSessionLocal() as session:
-            orders = await order_service.get_order_history(
-                session=session,
-                user_id=user_id,
-                limit=limit,
-            )
+    async with AsyncSessionLocal() as session:
+        orders = await svc_get_order_history(
+            session=session,
+            user_id=user_id,
+            limit=limit,
+        )
 
-        if not orders:
-            return f"No past orders found for User ID {user_id}."
+    if not orders:
+        return f"No prior order history found for user ID {user_id}."
 
-        lines = [f"Order history for User ID {user_id} ({len(orders)} order(s) found):"]
-        for o in orders:
-            date_str = o.get("created_at", "Unknown date")[:10] if o.get("created_at") else "Unknown"
-            lines.append(f"\nOrder #{o['id']} (Date: {date_str}, Status: {o['status']}, Total: ${o['total_amount']:.2f}):")
-            for item in o.get("items", []):
-                lines.append(
-                    f"  * {item.get('name', 'Item')} x{item.get('quantity', 1)} @ ${item.get('price', 0.0):.2f}"
-                )
-        return "\n".join(lines)
-    except Exception as exc:  # noqa: BLE001
-        return f"Error retrieving order history: {exc!s}"
+    return json.dumps(orders, indent=2)
 
 
-@tool
+@tool(args_schema=SaveUserPreferenceInput)
 async def save_user_preference(
     user_id: int,
-    prefers_organic: bool | None = None,
-    max_price_limit: float | None = None,
-    notes: str | None = None,
+    prefers_organic: Optional[bool] = None,
+    max_price_limit: Optional[float] = None,
+    notes: Optional[str] = None,
 ) -> str:
-    """Save or update persistent shopping preferences for a customer.
-
-    Use this when the customer expresses preferences like preferring organic foods,
-    having a strict budget cap per item, or having dietary guidelines.
-
-    Args:
-        user_id: The customer's unique ID number.
-        prefers_organic: True if the user wants organic items prioritized, False otherwise.
-        max_price_limit: Upper price ceiling per product (e.g. 20.0 for $20.00).
-        notes: Dietary notes or special instructions (e.g. 'Gluten-free snacks only').
-
-    Returns:
-        Confirmation message with the updated preferences.
+    """Save or update customer dietary rules, price budget limits, or shopping preferences.
+    
+    Use this tool whenever the customer says:
+    - "Remember that I prefer organic food" or "I only buy organic"
+    - "My budget is $15 per item" or "Never show me items over $20"
+    - "I am gluten-free" or "I am vegan"
+    
+    Persists these preferences to the database for future shopping sessions.
     """
-    try:
-        async with AsyncSessionLocal() as session:
-            updated = await user_service.save_user_preference(
-                session=session,
-                user_id=user_id,
-                prefers_organic=prefers_organic,
-                max_price_limit=max_price_limit,
-                notes=notes,
-            )
-
-        price_str = (
-            f"${updated['max_price_limit']:.2f}"
-            if updated.get("max_price_limit") is not None
-            else "None"
+    async with AsyncSessionLocal() as session:
+        pref = await svc_save_user_preference(
+            session=session,
+            user_id=user_id,
+            prefers_organic=prefers_organic,
+            max_price_limit=max_price_limit,
+            notes=notes,
         )
-        return (
-            f"Successfully updated preferences for User ID {user_id}:\n"
-            f"- Organic Preferred: {updated.get('prefers_organic')}\n"
-            f"- Max Price Limit: {price_str}\n"
-            f"- Notes: {updated.get('notes') or 'None'}"
-        )
-    except Exception as exc:  # noqa: BLE001
-        return f"Error saving preferences: {exc!s}"
+
+    return (
+        f"Preferences successfully updated for user {user_id}: "
+        f"prefers_organic={pref['prefers_organic']}, "
+        f"max_price_limit={pref['max_price_limit']}, "
+        f"notes='{pref['notes']}'"
+    )
 
 
-ALL_TOOLS = [
-    search_products,
-    get_order_history,
-    save_user_preference,
-]
+# Export tool catalog list for agent binding
+AGENT_TOOLS = [search_products, get_order_history, save_user_preference]

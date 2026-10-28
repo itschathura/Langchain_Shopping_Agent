@@ -1,3 +1,4 @@
+from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,37 +12,35 @@ async def search_products(
     max_price: float | None = None,
     category: str | None = None,
     limit: int = 10,
-) -> list[dict]:
-    """
-    Search the product catalog with multi-field filtering.
-
-    Args:
-        session: Active SQLAlchemy async session.
-        query: Optional search keyword matching product name or description.
-        is_organic: Filter strictly by organic certification (True/False).
-        max_price: Upper price limit cap.
-        category: Specific category name or partial match.
-        limit: Maximum number of products to return (default 10).
-
-    Returns:
-        List of product dictionaries.
-    """
+) -> list[dict[str, Any]]:
+    """Search and filter products based on query keywords, organic status, max price, and category."""
     stmt = select(Product)
 
+    # Keyword search across name and description
     if query and query.strip():
-        term = f"%{query.strip()}%"
-        stmt = stmt.where(or_(Product.name.ilike(term), Product.description.ilike(term)))
+        search_terms = query.strip().split()
+        for term in search_terms:
+            pattern = f"%{term}%"
+            stmt = stmt.where(
+                or_(
+                    Product.name.ilike(pattern),
+                    Product.description.ilike(pattern),
+                )
+            )
 
+    # Filter by organic preference
     if is_organic is not None:
         stmt = stmt.where(Product.is_organic == is_organic)
 
+    # Filter by maximum price limit
     if max_price is not None:
         stmt = stmt.where(Product.price <= max_price)
 
+    # Filter by category
     if category and category.strip():
         stmt = stmt.where(Product.category.ilike(f"%{category.strip()}%"))
 
-    # Order by price ascending to prioritize budget-friendly options
+    # Order by price ascending and limit
     stmt = stmt.order_by(Product.price.asc()).limit(limit)
 
     result = await session.execute(stmt)
@@ -49,16 +48,29 @@ async def search_products(
     return [p.to_dict() for p in products]
 
 
-async def get_product_by_id(session: AsyncSession, product_id: int) -> dict | None:
-    """Fetch a single product by its unique primary key ID."""
+async def get_product_by_id(
+    session: AsyncSession,
+    product_id: int,
+) -> dict[str, Any] | None:
+    """Retrieve a single product by its unique database ID."""
     stmt = select(Product).where(Product.id == product_id)
     result = await session.execute(stmt)
     product = result.scalar_one_or_none()
     return product.to_dict() if product else None
 
 
-async def get_all_categories(session: AsyncSession) -> list[str]:
-    """Retrieve all distinct product categories currently available."""
-    stmt = select(Product.category).distinct().order_by(Product.category.asc())
+async def get_all_products(
+    session: AsyncSession,
+    skip: int = 0,
+    limit: int = 50,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve all catalog products with pagination and optional category filter."""
+    stmt = select(Product)
+    if category and category.strip():
+        stmt = stmt.where(Product.category.ilike(f"%{category.strip()}%"))
+
+    stmt = stmt.order_by(Product.id.asc()).offset(skip).limit(limit)
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    products = result.scalars().all()
+    return [p.to_dict() for p in products]
