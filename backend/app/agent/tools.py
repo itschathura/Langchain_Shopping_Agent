@@ -1,4 +1,3 @@
-import json
 from typing import Any, Optional
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
@@ -79,7 +78,7 @@ async def search_products(
     - Specifies dietary/organic preferences (e.g. "organic honey")
     - Asks what items are in stock in a particular category
     
-    Returns a JSON string containing matched products with id, name, price, organic status, and stock.
+    Returns a human-readable and structured list of matching products with name, price, organic status, and stock.
     """
     async with AsyncSessionLocal() as session:
         products = await svc_search_products(
@@ -103,20 +102,16 @@ async def search_products(
             filters_applied.append(f"category='{category}'")
         return f"No products found matching criteria ({', '.join(filters_applied)}). Try broadening the search."
 
-    # Return clean, formatted JSON for LLM consumption
-    formatted = [
-        {
-            "id": p["id"],
-            "name": p["name"],
-            "price": p["price"],
-            "is_organic": p["is_organic"],
-            "category": p["category"],
-            "stock": p["stock"],
-            "description": p["description"],
-        }
-        for p in products
-    ]
-    return json.dumps(formatted, indent=2)
+    lines = [f"Found {len(products)} product(s):"]
+    for i, p in enumerate(products, 1):
+        lines.append(
+            f"{i}. [ID #{p['id']}] {p['name']} - ${p['price']:.2f} | "
+            f"Organic: {p['is_organic']} | Category: {p['category']} | Stock: {p['stock']}"
+        )
+        if p.get("description"):
+            lines.append(f"   Description: {p['description']}")
+
+    return "\n".join(lines)
 
 
 @tool(args_schema=GetOrderHistoryInput)
@@ -131,7 +126,7 @@ async def get_order_history(
     - Wants to reorder something they bought in the past
     - Wants to verify past receipt details or purchase totals
     
-    Returns a JSON list of past orders with dates, total amounts, and item breakdowns.
+    Returns customer order receipts with items, quantities, prices, and timestamps.
     """
     async with AsyncSessionLocal() as session:
         orders = await svc_get_order_history(
@@ -141,9 +136,20 @@ async def get_order_history(
         )
 
     if not orders:
-        return f"No prior order history found for user ID {user_id}."
+        return f"Order history for User ID {user_id}: No previous orders found."
 
-    return json.dumps(orders, indent=2)
+    lines = [f"Order history for User ID {user_id} (found {len(orders)} order(s)):"]
+    for o in orders:
+        lines.append(
+            f"- Order #{o['id']} | Total: ${o['total_amount']:.2f} | Status: {o['status']} | Date: {o.get('created_at')}"
+        )
+        for item in o.get("items", []):
+            qty = item.get("quantity", 1)
+            price = item.get("price", 0.0)
+            name = item.get("name", "Unknown item")
+            lines.append(f"  * {name} (Qty: {qty}, ${price:.2f})")
+
+    return "\n".join(lines)
 
 
 @tool(args_schema=SaveUserPreferenceInput)
@@ -171,13 +177,15 @@ async def save_user_preference(
             notes=notes,
         )
 
+    max_price_str = f"${pref['max_price_limit']:.2f}" if pref.get("max_price_limit") is not None else "None"
     return (
-        f"Preferences successfully updated for user {user_id}: "
-        f"prefers_organic={pref['prefers_organic']}, "
-        f"max_price_limit={pref['max_price_limit']}, "
-        f"notes='{pref['notes']}'"
+        f"Successfully updated preferences for User ID {user_id}:\n"
+        f"- Organic Preferred: {pref['prefers_organic']}\n"
+        f"- Max Price Limit: {max_price_str}\n"
+        f"- Notes: {pref.get('notes')}"
     )
 
 
 # Export tool catalog list for agent binding
-AGENT_TOOLS = [search_products, get_order_history, save_user_preference]
+ALL_TOOLS = [search_products, get_order_history, save_user_preference]
+AGENT_TOOLS = ALL_TOOLS
