@@ -15,11 +15,14 @@ class Base(DeclarativeBase):
 # Avoid connection leakage across test event loops
 is_testing = settings.environment in ("test", "testing") or "pytest" in sys.modules
 
+connect_args = {"timeout": 2.0} if "postgresql" in settings.database_url else {}
+
 engine = create_async_engine(
     settings.database_url,
     echo=False,
     future=True,
     pool_pre_ping=True,
+    connect_args=connect_args,
     poolclass=NullPool if is_testing else None,
 )
 
